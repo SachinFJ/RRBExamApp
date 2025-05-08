@@ -1,5 +1,5 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react'; // useCallback इम्पोर्ट करें
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,28 +13,42 @@ import {
   Alert,
   Keyboard,
   Share,
+  Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native'; // useFocusEffect इम्पोर्ट करें
+import { useFocusEffect } from '@react-navigation/native';
 
 const USER_NAME_KEY = '@UserNameKey';
 const USER_HIGH_SCORE_KEY = '@UserHighScoreKey';
 const USER_LAST_SCORE_KEY = '@UserLastScoreKey';
 const BOOKMARKED_QUESTIONS_KEY = '@BookmarkedQuestionsKey';
 
+const { width } = Dimensions.get('window');
+const cardMargin = 15;
+const cardPadding = 15;
+
+const numColumns = 2;
+const cardWidth = (width - cardMargin * (numColumns + 1)) / numColumns;
+
+type RootStackParamList = {
+  Home: undefined;
+  Quiz: undefined;
+  OneLiner: undefined;
+  BookmarkedScreen: undefined;
+};
+
 const HomeScreen = ({ navigation }) => {
   const [userName, setUserName] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(true); // प्रारंभिक लोडिंग के लिए true रखें
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
 
   const [highScore, setHighScore] = useState<string | null>(null);
   const [lastScore, setLastScore] = useState<string | null>(null);
   const [bookmarkedCount, setBookmarkedCount] = useState<number>(0);
 
-  // डेटा लोड करने का फंक्शन
   const loadUserData = useCallback(async () => {
-    // setIsLoading(true); // हर बार फोकस पर लोडिंग दिखाने से UI थोड़ा जंपी लग सकता है, चाहें तो रखें
+    setIsLoading(true);
     try {
       const storedName = await AsyncStorage.getItem(USER_NAME_KEY);
       const storedHighScore = await AsyncStorage.getItem(USER_HIGH_SCORE_KEY);
@@ -52,9 +66,7 @@ const HomeScreen = ({ navigation }) => {
         setBookmarkedCount(0);
       }
 
-      // यदि नाम नहीं है और पहले से एडिटिंग मोड में नहीं हैं, तो एडिटिंग मोड शुरू करें
-      // यह सुनिश्चित करें कि यह लॉजिक केवल प्रारंभिक लोड पर या विशिष्ट शर्तों के तहत ही चले
-      if (storedName === null && !isEditingName && !userName) { // userName की भी जांच करें ताकि बार-बार न खुले
+      if (storedName === null && !isEditingName && !userName) {
         setIsEditingName(true);
       }
     } catch (e) {
@@ -63,38 +75,27 @@ const HomeScreen = ({ navigation }) => {
       setHighScore(null);
       setLastScore(null);
       setBookmarkedCount(0);
-      if (!isEditingName && !userName) { // userName की भी जांच करें
+      if (!isEditingName && !userName) {
          setIsEditingName(true);
       }
     } finally {
-      setIsLoading(false); // लोडिंग समाप्त
+      setIsLoading(false);
     }
-  }, [isEditingName, userName]); // isEditingName और userName को निर्भरता में जोड़ा
+  }, [isEditingName, userName]);
 
-  // जब भी स्क्रीन फोकस में आए, डेटा लोड करें
-  useFocusEffect(
-    useCallback(() => {
-      setIsLoading(true); // फोकस पर लोडिंग दिखाना शुरू करें
-      loadUserData();
-      return () => {
-        // चाहें तो यहाँ क्लीनअप कर सकते हैं, यदि आवश्यक हो
-        // setIsLoading(false); // यह आवश्यक नहीं क्योंकि loadUserData इसे हैंडल करेगा
-      };
-    }, [loadUserData]) // loadUserData को निर्भरता में जोड़ा
-  );
+  useFocusEffect(loadUserData);
 
-
-  // प्रारंभिक माउंट पर isEditingName को सेट करने के लिए (केवल एक बार)
   useEffect(() => {
-    const checkInitialName = async () => {
-        const storedName = await AsyncStorage.getItem(USER_NAME_KEY);
-        if (storedName === null) {
-            setIsEditingName(true);
-        }
-        setIsLoading(false); // प्रारंभिक लोडिंग यहाँ समाप्त करें
+    // यह useEffect सुनिश्चित करता है कि यदि loadUserData के बाद भी userName null है
+    // और isEditingName false है, तो नाम इनपुट दिखाया जाए।
+    // यह मुख्य रूप से प्रारंभिक ऐप लोड के लिए है।
+    const checkAndSetInitialEditingName = async () => {
+      if (!isLoading && userName === null && !isEditingName) {
+          setIsEditingName(true);
+      }
     };
-    checkInitialName();
-  }, []);
+    checkAndSetInitialEditingName();
+  }, [isLoading, userName, isEditingName]);
 
 
   const saveName = async () => {
@@ -130,7 +131,7 @@ const HomeScreen = ({ navigation }) => {
   const handleShareApp = async () => {
     try {
       const appLink = "https://play.google.com/store/apps/details?id=your.app.id"; // अपनी ऐप का लिंक डालें
-      let message = `Check out Railway Exam Prep app!`;
+      let message = `Check out this Railway Exam Prep app!`; // अंग्रेजी में संदेश
       if (userName) {
         message += `\nMy name is ${userName}.`;
       }
@@ -144,7 +145,7 @@ const HomeScreen = ({ navigation }) => {
 
       await Share.share({
         message: message,
-        title: 'Railway Exam Prep App',
+        title: 'Railway Exam Prep App', // Android के लिए वैकल्पिक
       });
     } catch (error) {
       Alert.alert("Error", "Could not share the app.");
@@ -152,18 +153,19 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  // मेनू आइटम्स (शीर्षक और विवरण हिंदी में, जैसा पहले था)
   const menuItems = [
-    { id: 'quiz', title: 'Quiz Practice', color: '#3498db', navigateTo: 'Quiz', icon: '🎯', description: 'Evaluate your preparation with timed quizzes.' },
-    { id: 'oneliner', title: 'One-Liner Revision', color: '#2ecc71', navigateTo: 'OneLiner', icon: '💡', description: 'Quickly recall and revise important facts and GK.' },
-    { id: 'bookmarks', title: `Bookmarked (${bookmarkedCount})`, color: '#f39c12', navigateTo: 'BookmarkedScreen', icon: '🔖', description: 'Access your saved questions and notes.' },
-    { id: 'share', title: 'Share App', color: '#9b59b6', onPress: handleShareApp, icon: '📤', description: 'Share this app with your friends.' },
+    { id: 'quiz', title: 'क्विज़ प्रैक्टिस', color: '#3498db', navigateTo: 'Quiz', icon: '🎯', description: 'समयबद्ध क्विज़ के साथ अपनी तैयारी का मूल्यांकन करें।' },
+    { id: 'oneliner', title: 'वन-लाइनर रिविज़न', color: '#2ecc71', navigateTo: 'OneLiner', icon: '💡', description: 'महत्वपूर्ण तथ्यों और GK को तुरंत याद करें और दोहराएं।' },
+    { id: 'bookmarks', title: `बुकमार्क्स (${bookmarkedCount})`, color: '#f39c12', navigateTo: 'BookmarkedScreen', icon: '🔖', description: 'अपने सहेजे गए प्रश्नों और नोट्स तक पहुंचें।' },
+    { id: 'share', title: 'ऐप शेयर करें', color: '#9b59b6', onPress: handleShareApp, icon: '📤', description: 'इस ऐप को अपने दोस्तों के साथ साझा करें।' },
   ];
 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2c3e50" />
+          <ActivityIndicator size="large" color="#007bff" />
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
       </SafeAreaView>
@@ -172,13 +174,14 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#2c3e50" />
+      <StatusBar barStyle="light-content" backgroundColor="#0056b3" /> {/* नया हेडर रंग */}
       <ScrollView contentContainerStyle={styles.scrollViewContainer}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Railway Exam Prep</Text>
+          <Text style={styles.headerAppTitle}>Railway Exam Prep</Text> {/* ऐप का टाइटल */}
           {userName && !isEditingName ? (
             <View style={styles.welcomeContainer}>
-              <Text style={styles.headerSubtitle}>Welcome, {userName}!</Text>
+              <Text style={styles.welcomeText}>Welcome,</Text>
+              <Text style={styles.userNameText}>{userName}!</Text>
               <TouchableOpacity onPress={handleChangeName}>
                 <Text style={styles.changeNameLink}> (Change)</Text>
               </TouchableOpacity>
@@ -193,7 +196,7 @@ const HomeScreen = ({ navigation }) => {
             <TextInput
               style={styles.textInput}
               placeholder={userName ? "Enter new name" : "Enter your name to personalize"}
-              placeholderTextColor="#aaa"
+              placeholderTextColor="#a0a0a0"
               value={nameInput}
               onChangeText={setNameInput}
               onSubmitEditing={saveName}
@@ -210,9 +213,11 @@ const HomeScreen = ({ navigation }) => {
         )}
 
         {(highScore || lastScore) && !isEditingName && (
-          <View style={styles.statsSection}>
-            {highScore && <Text style={styles.statText}>High Score: {highScore}</Text>}
-            {lastScore && <Text style={styles.statText}>Last Score: {lastScore}</Text>}
+          <View style={styles.statsOuterContainer}>
+            <View style={styles.statsSection}>
+              {highScore && <Text style={styles.statText}><Text style={styles.statLabel}>High Score:</Text> {highScore}</Text>}
+              {lastScore && <Text style={styles.statText}><Text style={styles.statLabel}>Last Score:</Text> {lastScore}</Text>}
+            </View>
           </View>
         )}
 
@@ -220,23 +225,23 @@ const HomeScreen = ({ navigation }) => {
           {menuItems.map((item) => (
             <TouchableOpacity
               key={item.id}
-              style={[styles.card, { borderTopColor: item.color }]}
+              style={[styles.card, { width: cardWidth }]}
               onPress={() => {
                 if (item.navigateTo) {
-                  navigation.navigate(item.navigateTo as keyof RootStackParamList); // टाइप सुरक्षा के लिए
+                  navigation.navigate(item.navigateTo as keyof RootStackParamList);
                 } else if (item.onPress) {
                   item.onPress();
                 }
               }}
               activeOpacity={0.8}
             >
-              <View style={[styles.iconWrapper, { backgroundColor: item.color }]}>
-                <Text style={styles.iconText}>{item.icon}</Text>
+              <View style={[styles.iconWrapper, { backgroundColor: item.color + '2A' }]}>
+                <Text style={[styles.iconText, { color: item.color }]}>{item.icon}</Text>
               </View>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardDescription}>{item.description}</Text>
+              <Text style={styles.cardTitle} numberOfLines={1} ellipsizeMode="tail">{item.title}</Text>
+              <Text style={styles.cardDescription} numberOfLines={2} ellipsizeMode="tail">{item.description}</Text>
               <View style={[styles.goArrowContainer, {backgroundColor: item.color}]}>
-                <Text style={styles.goArrow}>➔</Text>
+                 <Text style={styles.goArrow}>➔</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -246,180 +251,195 @@ const HomeScreen = ({ navigation }) => {
   );
 };
 
-// --- स्टाइल्स ---
-// (आपके मौजूदा स्टाइल्स यहाँ अपरिवर्तित रहेंगे)
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f4f6f8',
+    backgroundColor: '#f4f7f9', // थोड़ा और साफ बैकग्राउंड
   },
   scrollViewContainer: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingBottom: 30, // नीचे और पैडिंग
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f4f6f8',
+    backgroundColor: '#f4f7f9',
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#2c3e50',
+    marginTop: 12,
+    fontSize: 17,
+    color: '#007bff', // लोडिंग टेक्स्ट का रंग बदला
   },
   header: {
-    backgroundColor: '#2c3e50',
-    paddingVertical: 25,
+    backgroundColor: '#007bff', // नया आकर्षक नीला रंग
+    paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 15 : 45, // स्टेटस बार के लिए सुरक्षित क्षेत्र
+    paddingBottom: 25,
     paddingHorizontal: 20,
     alignItems: 'center',
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    marginBottom: 15,
+    elevation: 8, // थोड़ा और गहरा शैडो
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
-  headerTitle: {
+  headerAppTitle: { // ऐप के टाइटल के लिए नया स्टाइल
     fontSize: 26,
     fontWeight: 'bold',
     color: '#ffffff',
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#bdc3c7',
-    textAlign: 'center',
+    marginBottom: 15, // वेलकम टेक्स्ट से थोड़ी दूरी
   },
   welcomeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'center', // कंटेंट को सेंटर करें
+  },
+  welcomeText: { // "Welcome," के लिए स्टाइल
+    fontSize: 18,
+    color: '#e0e0e0', // थोड़ा हल्का रंग
+    textAlign: 'center',
+  },
+  userNameText: { // उपयोगकर्ता के नाम के लिए स्टाइल
+    fontSize: 28, // बड़ा फ़ॉन्ट साइज़
+    fontWeight: 'bold',
+    color: '#ffffff', // सफेद रंग ताकि nổi bật हो
+    textAlign: 'center',
+    marginTop: 4, // "Welcome," से थोड़ी दूरी
+    marginBottom: 8, // "Change" लिंक से थोड़ी दूरी
+  },
+  headerSubtitle: { // जब नाम न हो
+    fontSize: 17,
+    color: '#bdc3c7',
+    textAlign: 'center',
+    marginTop: 10,
   },
   changeNameLink: {
-    fontSize: 14,
-    color: '#3498db',
-    marginLeft: 5,
+    fontSize: 15,
+    color: '#cce5ff', // हेडर के रंग से मिलता-जुलता हल्का नीला
+    fontWeight: '500',
+    textDecorationLine: 'underline', // अंडरलाइन ताकि क्लिकेबल लगे
   },
   nameInputSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingHorizontal: cardMargin,
     backgroundColor: '#ffffff',
-    marginHorizontal: 15,
-    marginTop: -15, // हेडर पर थोड़ा ओवरलैप
-    borderRadius: 8,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    marginHorizontal: cardMargin,
+    borderRadius: 12,
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    marginBottom: 15, // मार्जिन थोड़ा बढ़ाया
+    shadowRadius: 4,
+    marginBottom: 25, // अगले सेक्शन से थोड़ी अधिक दूरी
+    marginTop: -30, // हेडर पर थोड़ा और ओवरलैप
+    paddingVertical: 6, // थोड़ी कम वर्टिकल पैडिंग
   },
   textInput: {
     flex: 1,
-    borderBottomWidth: 1,
-    borderColor: '#dfe9f5',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 15,
-    color: '#333',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#333333',
     marginRight: 10,
   },
   saveButtonSmall: {
-    backgroundColor: '#16a085', // बदला हुआ रंग
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 6,
+    backgroundColor: '#28a745', // थोड़ा और वाइब्रेंट हरा
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
   },
   saveButtonTextSmall: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
+  },
+  statsOuterContainer: {
+    marginHorizontal: cardMargin,
+    marginBottom: 25,
   },
   statsSection: {
     backgroundColor: '#ffffff',
-    paddingVertical: 12,
+    paddingVertical: 20,
     paddingHorizontal: 20,
-    marginHorizontal: 15,
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    marginBottom: 15, // मेनू ग्रिड से पहले मार्जिन
-    alignItems: 'center', // आइटम्स को सेंटर करें
+    borderRadius: 12,
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   statText: {
-    fontSize: 15,
+    fontSize: 17, // थोड़ा बड़ा
     color: '#34495e',
     fontWeight: '500',
-    marginVertical: 3, // स्कोर के बीच थोड़ी जगह
+    marginVertical: 6,
+  },
+  statLabel: {
+    fontWeight: 'bold',
+    color: '#2c3e50',
   },
   menuGrid: {
-    paddingHorizontal: 15,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: cardMargin / 2,
+    // marginTop: 0, // यदि आँकड़े नहीं हैं तो भी ठीक लगेगा
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 18, 
-    elevation: 3, 
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, 
-    shadowRadius: 3,
-    borderTopWidth: 5, 
-    position: 'relative',
+    borderRadius: 18, // और गोल
+    padding: cardPadding,
+    marginBottom: cardMargin,
+    elevation: 6, // थोड़ा और शैडो
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1, // थोड़ी कम ओपेसिटी
+    shadowRadius: 7,
+    alignItems: 'center',
   },
   iconWrapper: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 64, // थोड़ा बड़ा
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    marginBottom: 15,
+    marginBottom: 14,
   },
   iconText: {
-    fontSize: 24,
-    color: '#fff',
+    fontSize: 30, // थोड़ा बड़ा
   },
   cardTitle: {
-    fontSize: 19,
-    fontWeight: 'bold',
+    fontSize: 16, // थोड़ा बढ़ाया
+    fontWeight: 'bold', // वापस बोल्ड किया
     color: '#34495e',
-    marginBottom: 8,
-    alignSelf: 'flex-start',
+    marginBottom: 7,
+    textAlign: 'center',
   },
   cardDescription: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    lineHeight: 20,
-    alignSelf: 'flex-start',
-    paddingRight: 30, 
+    fontSize: 13, // थोड़ा बढ़ाया
+    color: '#6c757d', // थोड़ा डार्क ग्रे
+    lineHeight: 19,
+    textAlign: 'center',
+    minHeight: 38,
+    marginBottom: 12,
   },
   goArrowContainer: {
     position: 'absolute',
-    right: 15,
-    top: '50%',
-    transform: [{translateY: -15}],
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    right: 12,
+    bottom: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
   goArrow: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   }
 });
-
-// RootStackParamList को AppNavigator से इम्पोर्ट करने की आवश्यकता हो सकती है यदि यह अलग फ़ाइल में है
-// या इसे HomeScreen में ही परिभाषित करें यदि केवल यहीं उपयोग हो रहा है
-type RootStackParamList = {
-  Home: undefined;
-  Quiz: undefined;
-  OneLiner: undefined;
-  BookmarkedScreen: undefined;
-};
-
 
 export default HomeScreen;
