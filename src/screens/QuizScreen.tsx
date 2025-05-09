@@ -1,27 +1,20 @@
 // src/screens/QuizScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // AsyncStorage इम्पोर्ट करें
-import { quizQuestions, QuizQuestion } from '../data/quizData'; // सुनिश्चित करें पाथ सही हो और QuizQuestion में id हो
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { quizQuestions, QuizQuestion } from '../data/quizData';
 
-// AsyncStorage Keys (HomeScreen के साथ सिंक में)
 const USER_HIGH_SCORE_KEY = '@UserHighScoreKey';
 const USER_LAST_SCORE_KEY = '@UserLastScoreKey';
 const BOOKMARKED_QUESTIONS_KEY = '@BookmarkedQuestionsKey';
 
-// QuizQuestion इंटरफ़ेस में id होना चाहिए
-// मान लें कि QuizQuestion इंटरफ़ेस ऐसा है:
-// export interface QuizQuestion {
-//   id: string; // या number - यह यूनिक होना चाहिए
-//   question: string;
-//   options: string[];
-//   correctAnswerIndex: number;
-//   examName?: string;
-// }
+interface QuizQuestionWithMeta extends QuizQuestion {
+  itemType?: 'quiz';
+}
 
 
 const QuizScreen = ({ navigation }) => {
-  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [questions, setQuestions] = useState<QuizQuestionWithMeta[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const [score, setScore] = useState(0);
@@ -34,27 +27,27 @@ const QuizScreen = ({ navigation }) => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // बुकमार्क के लिए स्टेट
-  const [bookmarkedQuestions, setBookmarkedQuestions] = useState<QuizQuestion[]>([]);
+  const [bookmarkedItems, setBookmarkedItems] = useState<QuizQuestionWithMeta[]>([]);
 
-  // मौजूदा बुकमार्क लोड करें
   useEffect(() => {
     const loadBookmarks = async () => {
       try {
         const storedBookmarks = await AsyncStorage.getItem(BOOKMARKED_QUESTIONS_KEY);
         if (storedBookmarks) {
-          setBookmarkedQuestions(JSON.parse(storedBookmarks));
+          const allBookmarks = JSON.parse(storedBookmarks);
+          const quizBookmarks = allBookmarks.filter(item => item.itemType === 'quiz' || !item.itemType);
+          setBookmarkedItems(quizBookmarks);
         }
-      } catch (e) {
+      } catch (e)
+      { // Error reading value
         console.error("Failed to load bookmarks.", e);
       }
     };
     loadBookmarks();
   }, []);
 
-  // टाइमर को मैनेज करने के लिए useEffect
   useEffect(() => {
-    let isActive = questions.length > 0 && currentQuestionIndex < questions.length && currentQuestionIndex < questions.length;
+    let isActive = questions.length > 0 && currentQuestionIndex < questions.length;
 
     if (isActive) {
       timerRef.current = setInterval(() => {
@@ -72,10 +65,10 @@ const QuizScreen = ({ navigation }) => {
     };
   }, [questions.length, currentQuestionIndex]);
 
-  // क्विज़ के लिए प्रश्नों को लोड और शफल करें
   useEffect(() => {
     const shuffledQuestions = [...quizQuestions].sort(() => Math.random() - 0.5);
-    setQuestions(shuffledQuestions.slice(0, 10)); // उदाहरण के लिए 10 प्रश्न, या सभी के लिए .slice हटा दें
+    // .slice(0, 10) को हटाया गया ताकि सभी प्रश्न लोड हों
+    setQuestions(shuffledQuestions.map(q => ({...q}))); 
     setCurrentQuestionIndex(0);
     setSelectedOptionIndex(null);
     setScore(0);
@@ -116,27 +109,61 @@ const QuizScreen = ({ navigation }) => {
       setIsCorrect(null);
       setFeedbackEmoji(null);
     } else {
-      finalizeQuiz("क्विज़ समाप्त!");
+      finalizeQuiz("Quiz Finished!");
     }
   };
 
   const handleNextQuestion = () => {
-    if (!isAnswerProcessed && questions.length > 0) { // सुनिश्चित करें कि प्रश्न मौजूद हैं
+    if (!isAnswerProcessed && questions.length > 0 && selectedOptionIndex === null) {
       setSkippedCount((prevCount) => prevCount + 1);
     }
     moveToNextQuestionLogic();
   };
 
+  const handleSubmitQuiz = () => {
+    Alert.alert(
+      "Submit Quiz",
+      "Are you sure you want to submit the quiz now?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Submit", onPress: () => finalizeQuiz("Quiz Submitted"), style: 'destructive' }
+      ]
+    );
+  };
+
   const finalizeQuiz = async (title: string) => {
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const finalScoreString = `${score}/${questions.length}`;
+    const totalQuestionsInSession = questions.length;
+    let currentSkipped = skippedCount;
+
+    // स्किप्ड प्रश्नों की गणना को बेहतर बनाने का प्रयास
+    if (title === "Quiz Submitted") {
+        // वर्तमान प्रश्न का उत्तर दिया गया है या नहीं
+        const isCurrentQuestionAttempted = isAnswerProcessed || selectedOptionIndex !== null;
+        // उन प्रश्नों की संख्या जो देखे गए लेकिन उत्तर नहीं दिए गए (स्किप किए गए)
+        // और जो प्रश्न देखे ही नहीं गए
+        let unansweredOrUnseen = 0;
+        if (!isCurrentQuestionAttempted && currentQuestionIndex < totalQuestionsInSession) {
+            // यदि वर्तमान प्रश्न का उत्तर नहीं दिया गया और सबमिट किया गया
+            unansweredOrUnseen++; 
+        }
+        // currentQuestionIndex के बाद वाले सभी प्रश्न भी स्किप्ड माने जाएंगे
+        unansweredOrUnseen += (totalQuestionsInSession - (currentQuestionIndex + 1));
+        
+        // यह सुनिश्चित करें कि currentSkipped में डुप्लिकेट काउंटिंग न हो
+        // skippedCount में वे प्रश्न हैं जिन्हें 'Next' दबाकर स्किप किया गया
+        // unansweredOrUnseen में वे हैं जो सबमिट करते समय अनअटेम्प्टेड थे
+        // यदि कोई प्रश्न Next दबाकर स्किप किया गया और वह बाद में भी अनअटेम्प्टेड रहा, तो वह दो बार काउंट हो सकता है
+        // इसलिए, हम कुल प्रश्नों में से सही और गलत उत्तरों को घटाकर स्किप्ड निकाल सकते हैं
+        currentSkipped = totalQuestionsInSession - (correctAnswersCount + wrongAnswersCount);
+    }
+
+
+    const finalScoreString = `${score}/${totalQuestionsInSession}`;
 
     try {
-      // पिछला स्कोर सहेजें
       await AsyncStorage.setItem(USER_LAST_SCORE_KEY, finalScoreString);
-
-      // उच्चतम स्कोर सहेजें
       const storedHighScore = await AsyncStorage.getItem(USER_HIGH_SCORE_KEY);
       if (storedHighScore) {
         const [storedScoreNumStr] = storedHighScore.split('/');
@@ -145,93 +172,89 @@ const QuizScreen = ({ navigation }) => {
           await AsyncStorage.setItem(USER_HIGH_SCORE_KEY, finalScoreString);
         }
       } else {
-        // कोई उच्चतम स्कोर पहले से नहीं है, तो इसे सहेजें
         await AsyncStorage.setItem(USER_HIGH_SCORE_KEY, finalScoreString);
       }
     } catch (e) {
       console.error("Failed to save scores.", e);
     }
     
-    // setCurrentQuestionIndex को questions.length पर सेट करें ताकि "क्विज़ समाप्त हो चुका है" संदेश दिखे
-    // Alert दिखने से पहले ताकि बैकग्राउंड में क्विज UI न दिखे
-    setCurrentQuestionIndex(questions.length);
-
+    setCurrentQuestionIndex(questions.length); // क्विज़ UI को समाप्त करने के लिए
 
     Alert.alert(
       title,
-      `लिया गया कुल समय: ${formatTime(elapsedTime)}\nआपका अंतिम स्कोर है: ${finalScoreString}\nसही: ${correctAnswersCount}, गलत: ${wrongAnswersCount}, स्किप: ${skippedCount}`,
-      [{ text: "ठीक है", onPress: () => navigation.goBack() }]
+      `Total time taken: ${formatTime(elapsedTime)}\nYour final score is: ${finalScoreString}\nCorrect: ${correctAnswersCount}, Wrong: ${wrongAnswersCount}, Skipped: ${currentSkipped}`,
+      [{ text: "OK", onPress: () => navigation.goBack() }]
     );
   };
 
   const toggleBookmark = async () => {
-    if (!questions[currentQuestionIndex]) return; // यदि कोई प्रश्न नहीं है तो कुछ न करें
+    if (!questions[currentQuestionIndex]) return;
 
     const currentQ = questions[currentQuestionIndex];
-    // प्रश्न में यूनिक 'id' प्रॉपर्टी होनी चाहिए
     if (!currentQ.id) {
-        console.warn("Question is missing an ID. Cannot bookmark.");
-        Alert.alert("त्रुटि", "इस प्रश्न को बुकमार्क नहीं किया जा सकता (ID नहीं है)।");
-        return;
+      console.warn("Question is missing an ID. Cannot bookmark.");
+      Alert.alert("Error", "This question cannot be bookmarked (ID missing).");
+      return;
     }
 
-    let updatedBookmarks = [...bookmarkedQuestions];
-    const existingBookmarkIndex = updatedBookmarks.findIndex(bq => bq.id === currentQ.id);
+    let allStoredBookmarksRaw = await AsyncStorage.getItem(BOOKMARKED_QUESTIONS_KEY);
+    let allStoredBookmarks: any[] = allStoredBookmarksRaw ? JSON.parse(allStoredBookmarksRaw) : [];
+
+    const bookmarkQuizItem: QuizQuestionWithMeta = { ...currentQ, itemType: 'quiz' };
+
+    const existingBookmarkIndex = allStoredBookmarks.findIndex(
+      (bq) => bq.id === bookmarkQuizItem.id && bq.itemType === 'quiz'
+    );
 
     if (existingBookmarkIndex > -1) {
-      // पहले से बुकमार्क है, तो हटाएं
-      updatedBookmarks.splice(existingBookmarkIndex, 1);
+      allStoredBookmarks.splice(existingBookmarkIndex, 1);
     } else {
-      // बुकमार्क नहीं है, तो जोड़ें
-      updatedBookmarks.push(currentQ);
+      allStoredBookmarks.push(bookmarkQuizItem);
     }
 
     try {
-      await AsyncStorage.setItem(BOOKMARKED_QUESTIONS_KEY, JSON.stringify(updatedBookmarks));
-      setBookmarkedQuestions(updatedBookmarks); // लोकल स्टेट अपडेट करें
+      await AsyncStorage.setItem(BOOKMARKED_QUESTIONS_KEY, JSON.stringify(allStoredBookmarks));
+      const currentQuizBookmarks = allStoredBookmarks.filter(item => item.itemType === 'quiz');
+      setBookmarkedItems(currentQuizBookmarks);
     } catch (e) {
       console.error("Failed to update bookmarks.", e);
-      Alert.alert("त्रुटि", "बुकमार्क अपडेट करने में विफल।");
+      Alert.alert("Error", "Failed to update bookmarks.");
     }
   };
 
   if (questions.length === 0 && currentQuestionIndex >= questions.length) {
-    // यह स्थिति तब है जब प्रश्न लोड नहीं हुए हैं या क्विज़ वास्तव में समाप्त हो चुका है
     return (
-        <View style={styles.container}>
-            <Text style={styles.loadingText}>
-                {questions.length === 0 && currentQuestionIndex === 0 ? "प्रश्न लोड हो रहे हैं..." : "क्विज़ समाप्त हो चुका है।"}
-            </Text>
-        </View>
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>
+          {questions.length === 0 && currentQuestionIndex === 0 ? "Loading questions..." : "Quiz finished."} 
+        </Text>
+      </View>
     );
   }
 
-
-  // यदि currentQuestionIndex सीमा से बाहर है (लोडिंग या क्विज़ समाप्त होने की स्थिति)
   if (currentQuestionIndex >= questions.length && questions.length > 0) {
-    return <View style={styles.container}><Text style={styles.loadingText}>क्विज़ समाप्त हो चुका है।</Text></View>;
+    return <View style={styles.container}><Text style={styles.loadingText}>Quiz finished.</Text></View>;
   }
   if (questions.length === 0 ) {
-     return <View style={styles.container}><Text style={styles.loadingText}>प्रश्न लोड हो रहे हैं...</Text></View>;
+    return <View style={styles.container}><Text style={styles.loadingText}>Loading questions...</Text></View>;
   }
 
-
   const currentQuestion = questions[currentQuestionIndex];
-  // वर्तमान प्रश्न बुकमार्क है या नहीं
-  const isCurrentBookmarked = currentQuestion && currentQuestion.id ? bookmarkedQuestions.some(bq => bq.id === currentQuestion.id) : false;
+  const isCurrentBookmarked = currentQuestion && currentQuestion.id ? 
+    bookmarkedItems.some(bq => bq.id === currentQuestion.id) : false;
 
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
       <View style={styles.headerContainer}>
         <View style={styles.dashboard}>
-          <Text style={styles.dashboardText}>स्कोर: {score}</Text>
-          <Text style={styles.dashboardText}>सही: {correctAnswersCount}</Text>
-          <Text style={styles.dashboardText}>गलत: {wrongAnswersCount}</Text>
-          <Text style={styles.dashboardText}>स्किप: {skippedCount}</Text>
+          <Text style={styles.dashboardText}>Score: {score}</Text>
+          <Text style={styles.dashboardText}>Correct: {correctAnswersCount}</Text>
+          <Text style={styles.dashboardText}>Wrong: {wrongAnswersCount}</Text>
+          <Text style={styles.dashboardText}>Skipped: {skippedCount}</Text>
         </View>
         <View style={styles.timerContainer}>
-          <Text style={styles.timerText}>समय: {formatTime(elapsedTime)}</Text>
+          <Text style={styles.timerText}>Time: {formatTime(elapsedTime)}</Text>
         </View>
       </View>
 
@@ -243,19 +266,20 @@ const QuizScreen = ({ navigation }) => {
 
       <View style={styles.questionCard}>
         <View style={styles.questionHeader}>
-            <Text style={styles.questionNumberText}>
-                प्रश्न {currentQuestionIndex + 1} / {questions.length}
+          <Text style={styles.questionNumberText}>
+            Question {currentQuestionIndex + 1} / {questions.length}
+          </Text>
+          <TouchableOpacity onPress={toggleBookmark} style={styles.bookmarkButton}>
+            <Text style={[styles.bookmarkIcon, isCurrentBookmarked ? styles.bookmarkedActiveIcon : styles.bookmarkedInactiveIcon]}>
+              {isCurrentBookmarked ? '🔖' : '✩'}
             </Text>
-            <TouchableOpacity onPress={toggleBookmark} style={styles.bookmarkButton}>
-                <Text style={styles.bookmarkIcon}>{isCurrentBookmarked ? '🔖' : ' L '}</Text> 
-                {/* ' L ' एक खाली बुकमार्क जैसा दिखेगा, आप असली आइकॉन इस्तेमाल कर सकते हैं */}
-            </TouchableOpacity>
+          </TouchableOpacity>
         </View>
         <Text style={styles.questionText}>{currentQuestion.question}</Text>
 
         {currentQuestion.examName && (
           <Text style={styles.examNameText}>
-            परीक्षा संदर्भ: {currentQuestion.examName}
+            Exam Reference: {currentQuestion.examName}
           </Text>
         )}
       </View>
@@ -297,14 +321,28 @@ const QuizScreen = ({ navigation }) => {
         })}
       </View>
 
-      <TouchableOpacity
-        style={[styles.actionButton, styles.nextButtonOnly, isAnswerProcessed ? {} : styles.disabledNextButton]}
-        onPress={handleNextQuestion}
-        // disabled={!isAnswerProcessed && selectedOptionIndex === null} // अगला बटन तब तक डिसेबल रखें जब तक कोई ऑप्शन न चुना जाए या उत्तर प्रोसेस न हो
-      >
-        <Text style={styles.actionButtonText}>अगला प्रश्न</Text>
-      </TouchableOpacity>
-    </View>
+      <View style={styles.actionButtonsContainer}>
+        <TouchableOpacity
+            style={[styles.actionButton, styles.submitButton]}
+            onPress={handleSubmitQuiz}
+            disabled={currentQuestionIndex >= questions.length}
+        >
+            <Text style={styles.actionButtonText}>Submit Quiz</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+            style={[
+                styles.actionButton,
+                styles.nextButton,
+                (!isAnswerProcessed && selectedOptionIndex === null && currentQuestionIndex < questions.length -1) ? styles.disabledNextButton : {}
+            ]}
+            onPress={handleNextQuestion}
+        >
+            <Text style={styles.actionButtonText}>
+                {currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next Question'}
+            </Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 };
 
@@ -315,42 +353,48 @@ const formatTime = (seconds: number) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  scrollView: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#f0f8ff',
+  },
+  container: {
+    flexGrow: 1,
+    padding: 15,
+    backgroundColor: '#f0f4f8',
   },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   dashboard: {
     flexDirection: 'row',
-    justifyContent: 'space-around', // स्पेस बेहतर करने के लिए
+    justifyContent: 'space-around',
     backgroundColor: '#e9ecef',
     borderRadius: 8,
     paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     flex: 1,
-    marginRight: 10,
+    marginRight: 8,
+    elevation: 1,
   },
   dashboardText: {
-    fontSize: 12, // थोड़ा छोटा किया
+    fontSize: 13,
     fontWeight: '600',
     color: '#495057',
   },
   timerContainer: {
     backgroundColor: '#ffc107',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 8,
-    minWidth: 80, // न्यूनतम चौड़ाई
+    minWidth: 70,
     alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 1,
   },
   timerText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#212529',
   },
@@ -365,44 +409,53 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: 'center',
     marginTop: 50,
-    color: '#333',
+    color: '#34495e',
   },
   questionCard: {
-    marginBottom: 15,
+    marginBottom: 10,
     padding: 15,
     backgroundColor: '#ffffff',
     borderRadius: 10,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
   },
-  questionHeader: { // प्रश्न संख्या और बुकमार्क बटन के लिए
+  questionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
   questionNumberText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6c757d',
-    // marginBottom: 8, // questionHeader में चला गया
+    fontWeight: '500',
   },
   bookmarkButton: {
-    padding: 5,
+    padding: 6,
   },
   bookmarkIcon: {
-    fontSize: 22, // आइकॉन का साइज़
-    color: '#6c757d', // बुकमार्क आइकॉन का रंग
+    fontSize: 24,
+  },
+  bookmarkedActiveIcon: {
+    color: '#ffc107',
+  },
+  bookmarkedInactiveIcon: {
+    color: '#adb5bd',
   },
   questionText: {
     fontSize: 17,
     fontWeight: '500',
     color: '#212529',
-    lineHeight: 25,
+    lineHeight: 24,
     marginBottom: 8,
   },
   examNameText: {
-    fontSize: 13,
+    fontSize: 12,
     fontStyle: 'italic',
-    color: '#4a5568',
+    color: '#007bff',
     marginTop: 5,
     textAlign: 'right',
   },
@@ -411,12 +464,13 @@ const styles = StyleSheet.create({
   },
   optionButton: {
     backgroundColor: '#ffffff',
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 15,
-    marginVertical: 6,
+    marginVertical: 5,
     borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#ced4da',
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    elevation: 1,
   },
   optionText: {
     fontSize: 15,
@@ -424,44 +478,55 @@ const styles = StyleSheet.create({
   },
   selectedOptionButton: {
     backgroundColor: '#cfe2ff',
-    borderColor: '#0d6efd',
+    borderColor: '#007bff',
   },
   correctOptionButton: {
     backgroundColor: '#d1e7dd',
     borderColor: '#198754',
   },
   correctOptionText: {
-      color: '#0f5132',
+    color: '#0f5132',
+    fontWeight: 'bold',
   },
   incorrectOptionButton: {
     backgroundColor: '#f8d7da',
     borderColor: '#dc3545',
   },
   incorrectOptionText: {
-      color: '#842029',
+    color: '#721c24',
+    fontWeight: 'bold',
   },
   disabledOptionButton: {
-      backgroundColor: '#f8f9fa',
-      borderColor: '#e9ecef',
+    backgroundColor: '#f8f9fa',
+    borderColor: '#e9ecef',
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
   },
   actionButton: {
-    backgroundColor: '#0d6efd',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
     borderRadius: 8,
     alignItems: 'center',
     elevation: 2,
-    marginTop: 10,
+    flex: 1,
   },
-  nextButtonOnly: {
-      width: '100%',
+  submitButton: {
+    backgroundColor: '#dc3545',
+    marginRight: 8,
   },
-  disabledNextButton: { // यदि अगला बटन डिसेबल करना हो
-    backgroundColor: '#a0cfff', // हल्का नीला
+  nextButton: {
+    backgroundColor: '#007bff',
+  },
+  disabledNextButton: {
+    backgroundColor: '#a0cfff',
+    opacity: 0.7,
   },
   actionButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
   },
 });
