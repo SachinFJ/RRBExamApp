@@ -1,23 +1,20 @@
 // src/screens/OneLinerScreen.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // AsyncStorage इम्पोर्ट करें
+import React, { useState, useEffect, useCallback } from 'react'; // useCallback जोड़ा गया
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native'; // ScrollView जोड़ा गया
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { oneLinerQuestions, OneLinerQuestion } from '../data/oneLinerData'; // पाथ सुनिश्चित करें
+import { useFocusEffect, useNavigation } from '@react-navigation/native'; // useFocusEffect और useNavigation जोड़ा गया
 
-// AsyncStorage Key (HomeScreen और QuizScreen के साथ सिंक में)
 const BOOKMARKED_QUESTIONS_KEY = '@BookmarkedQuestionsKey';
 
-// OneLinerQuestion इंटरफ़ेस में id होना चाहिए
-// मान लें कि OneLinerQuestion इंटरफ़ेस ऐसा है:
-// export interface OneLinerQuestion {
-//   id: string; // या number - यह यूनिक होना चाहिए
-//   question: string;
-//   answer: string;
-//   // अन्य प्रॉपर्टीज यदि हों
-// }
+// OneLinerQuestion इंटरफ़ेस में id और itemType (वैकल्पिक) होना चाहिए
+interface OneLinerQuestionWithMeta extends OneLinerQuestion {
+  itemType?: 'oneliner'; // बुकमार्क के लिए
+}
 
-const OneLinerScreen = ({ navigation }) => {
-  const [questions, setQuestions] = useState<OneLinerQuestion[]>([]);
+const OneLinerScreen = () => {
+  const navigation = useNavigation(); // नेविगेशन हुक
+  const [questions, setQuestions] = useState<OneLinerQuestionWithMeta[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
   const [hasSelfAssessedThisQuestion, setHasSelfAssessedThisQuestion] = useState(false);
@@ -26,27 +23,34 @@ const OneLinerScreen = ({ navigation }) => {
   const [userMarkedCorrect, setUserMarkedCorrect] = useState(0);
   const [userMarkedIncorrect, setUserMarkedIncorrect] = useState(0);
 
-  // बुकमार्क के लिए स्टेट (सभी प्रकार के बुकमार्क आइटम स्टोर कर सकता है)
-  const [bookmarkedItems, setBookmarkedItems] = useState<(OneLinerQuestion | any)[]>([]);
+  // बुकमार्क के लिए स्टेट (अब OneLinerQuestionWithMeta टाइप का होगा)
+  const [bookmarkedItems, setBookmarkedItems] = useState<OneLinerQuestionWithMeta[]>([]);
 
-  // मौजूदा बुकमार्क लोड करें
-  useEffect(() => {
-    const loadBookmarks = async () => {
-      try {
-        const storedBookmarks = await AsyncStorage.getItem(BOOKMARKED_QUESTIONS_KEY);
-        if (storedBookmarks) {
-          setBookmarkedItems(JSON.parse(storedBookmarks));
-        }
-      } catch (e) {
-        console.error("Failed to load bookmarks.", e);
+  // मौजूदा बुकमार्क लोड करें (केवल वन-लाइनर के लिए)
+  const loadBookmarks = useCallback(async () => {
+    try {
+      const storedBookmarks = await AsyncStorage.getItem(BOOKMARKED_QUESTIONS_KEY);
+      if (storedBookmarks) {
+        const allBookmarks = JSON.parse(storedBookmarks);
+        // केवल वन-लाइनर बुकमार्क फ़िल्टर करें या वे जिनमें itemType नहीं है (पुराने डेटा के लिए)
+        const oneLinerBookmarks = allBookmarks.filter(
+          (item: any) => item.itemType === 'oneliner' || (!item.itemType && item.answer)
+        );
+        setBookmarkedItems(oneLinerBookmarks);
+      } else {
+        setBookmarkedItems([]);
       }
-    };
-    loadBookmarks();
+    } catch (e) {
+      console.error("Failed to load bookmarks for one-liners.", e);
+    }
   }, []);
+
+  useFocusEffect(loadBookmarks); // स्क्रीन फोकस होने पर बुकमार्क लोड करें
 
   useEffect(() => {
     const shuffledQuestions = [...oneLinerQuestions].sort(() => Math.random() - 0.5);
-    setQuestions(shuffledQuestions);
+    // सुनिश्चित करें कि प्रश्न OneLinerQuestionWithMeta के अनुरूप हों
+    setQuestions(shuffledQuestions.map(q => ({...q})));
     setCurrentQuestionIndex(0);
     setIsAnswerRevealed(false);
     setHasSelfAssessedThisQuestion(false);
@@ -60,7 +64,7 @@ const OneLinerScreen = ({ navigation }) => {
       setRevealedCount(prevCount => prevCount + 1);
     }
     setIsAnswerRevealed(true);
-    setHasSelfAssessedThisQuestion(false);
+    setHasSelfAssessedThisQuestion(false); // उत्तर दिखाने पर स्व-मूल्यांकन रीसेट करें
   };
 
   const handleSelfAssessment = (thoughtCorrectly: boolean) => {
@@ -79,9 +83,9 @@ const OneLinerScreen = ({ navigation }) => {
       setHasSelfAssessedThisQuestion(false);
     } else {
       Alert.alert(
-        "वन-लाइनर समाप्त",
-        `आपने ${revealedCount} उत्तर देखे।\nसही सोचे: ${userMarkedCorrect}\nगलत सोचे: ${userMarkedIncorrect}`,
-        [{ text: "ठीक है", onPress: () => navigation.goBack() }]
+        "One-Liners Finished", // अंग्रेजी में
+        `You revealed ${revealedCount} answers.\nCorrectly Guessed: ${userMarkedCorrect}\nIncorrectly Guessed: ${userMarkedIncorrect}`, // अंग्रेजी में
+        [{ text: "OK", onPress: () => navigation.goBack() }] // अंग्रेजी में
       );
     }
   };
@@ -90,61 +94,75 @@ const OneLinerScreen = ({ navigation }) => {
     if (!questions[currentQuestionIndex]) return;
 
     const currentQ = questions[currentQuestionIndex];
-    // प्रश्न में यूनिक 'id' प्रॉपर्टी होनी चाहिए
     if (!currentQ.id) {
-        console.warn("One-liner is missing an ID. Cannot bookmark.");
-        Alert.alert("त्रुटि", "इस वन-लाइनर को बुकमार्क नहीं किया जा सकता (ID नहीं है)।");
-        return;
+      console.warn("One-liner is missing an ID. Cannot bookmark.");
+      Alert.alert("Error", "This one-liner cannot be bookmarked (ID missing)."); // अंग्रेजी में
+      return;
     }
 
-    let updatedBookmarks = [...bookmarkedItems];
-    const existingBookmarkIndex = updatedBookmarks.findIndex(bq => bq.id === currentQ.id);
+    // AsyncStorage से सभी बुकमार्क लोड करें ताकि अन्य प्रकार के बुकमार्क सुरक्षित रहें
+    let allStoredBookmarksRaw = await AsyncStorage.getItem(BOOKMARKED_QUESTIONS_KEY);
+    let allStoredBookmarks: any[] = allStoredBookmarksRaw ? JSON.parse(allStoredBookmarksRaw) : [];
+
+    // वर्तमान वन-लाइनर के लिए बुकमार्क आइटम बनाएं
+    const bookmarkOneLinerItem: OneLinerQuestionWithMeta = { ...currentQ, itemType: 'oneliner' };
+
+    const existingBookmarkIndex = allStoredBookmarks.findIndex(
+      (bq) => bq.id === bookmarkOneLinerItem.id && bq.itemType === 'oneliner'
+    );
 
     if (existingBookmarkIndex > -1) {
-      // पहले से बुकमार्क है, तो हटाएं
-      updatedBookmarks.splice(existingBookmarkIndex, 1);
+      allStoredBookmarks.splice(existingBookmarkIndex, 1); // हटाएं
     } else {
-      // बुकमार्क नहीं है, तो जोड़ें (पूरा वन-लाइनर ऑब्जेक्ट)
-      updatedBookmarks.push(currentQ);
+      allStoredBookmarks.push(bookmarkOneLinerItem); // जोड़ें
     }
 
     try {
-      await AsyncStorage.setItem(BOOKMARKED_QUESTIONS_KEY, JSON.stringify(updatedBookmarks));
-      setBookmarkedItems(updatedBookmarks); // लोकल स्टेट अपडेट करें
+      await AsyncStorage.setItem(BOOKMARKED_QUESTIONS_KEY, JSON.stringify(allStoredBookmarks));
+      // लोकल स्टेट (bookmarkedItems) को भी अपडेट करें ताकि UI तुरंत रिफ्लेक्ट हो
+      // यह केवल वन-लाइनर बुकमार्क दिखाएगा जो इस स्क्रीन के लिए प्रासंगिक हैं
+      const currentOneLinerBookmarks = allStoredBookmarks.filter(item => item.itemType === 'oneliner');
+      setBookmarkedItems(currentOneLinerBookmarks);
     } catch (e) {
       console.error("Failed to update bookmarks for one-liner.", e);
-      Alert.alert("त्रुटि", "बुकमार्क अपडेट करने में विफल।");
+      Alert.alert("Error", "Failed to update bookmarks."); // अंग्रेजी में
     }
   };
 
 
   if (questions.length === 0) {
-    return <View style={styles.container}><Text style={styles.loadingText}>वन-लाइनर लोड हो रहे हैं...</Text></View>;
+    return <View style={styles.container}><Text style={styles.loadingText}>Loading one-liners...</Text></View>; // अंग्रेजी में
   }
 
   if (currentQuestionIndex >= questions.length && questions.length > 0) {
-    return <View style={styles.container}><Text style={styles.loadingText}>सभी वन-लाइनर समाप्त हो चुके हैं।</Text></View>;
+    return <View style={styles.container}><Text style={styles.loadingText}>All one-liners finished.</Text></View>; // अंग्रेजी में
   }
 
   const currentQuestion = questions[currentQuestionIndex];
-  // वर्तमान प्रश्न बुकमार्क है या नहीं
-  const isCurrentBookmarked = currentQuestion && currentQuestion.id ? bookmarkedItems.some(bq => bq.id === currentQuestion.id) : false;
+  // वर्तमान प्रश्न बुकमार्क है या नहीं (केवल वन-लाइनर बुकमार्क में से जांचें)
+  const isCurrentBookmarked = currentQuestion && currentQuestion.id ? 
+    bookmarkedItems.some(bq => bq.id === currentQuestion.id) : false;
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
       <View style={styles.statsContainer}>
-        <Text style={styles.statsText}>प्रश्न: {currentQuestionIndex + 1}/{questions.length}</Text>
-        <Text style={styles.statsText}>देखे गए: {revealedCount}</Text>
-        <Text style={styles.statsText}>सही सोचे: {userMarkedCorrect}</Text>
-        <Text style={styles.statsText}>गलत सोचे: {userMarkedIncorrect}</Text>
+        <Text style={styles.statsText}>Question: {currentQuestionIndex + 1}/{questions.length}</Text>
+        <Text style={styles.statsText}>Revealed: {revealedCount}</Text>
+        <Text style={styles.statsText}>Guessed Correct: {userMarkedCorrect}</Text>
+        <Text style={styles.statsText}>Guessed Incorrect: {userMarkedIncorrect}</Text>
       </View>
 
       <View style={styles.questionCard}>
         <View style={styles.questionHeader}>
-            <Text style={styles.questionLabel}>प्रश्न:</Text>
-            {currentQuestion && currentQuestion.id && ( // सुनिश्चित करें कि प्रश्न और उसकी id मौजूद है
+            <Text style={styles.questionLabel}>Question:</Text>
+            {currentQuestion && currentQuestion.id && (
                 <TouchableOpacity onPress={toggleBookmark} style={styles.bookmarkButton}>
-                    <Text style={styles.bookmarkIcon}>{isCurrentBookmarked ? '🔖' : ' L '}</Text>
+                    <Text style={[
+                        styles.bookmarkIcon, 
+                        isCurrentBookmarked ? styles.bookmarkedActiveIcon : styles.bookmarkedInactiveIcon
+                    ]}>
+                        {isCurrentBookmarked ? '🔖' : '☆'}
+                    </Text>
                 </TouchableOpacity>
             )}
         </View>
@@ -153,33 +171,33 @@ const OneLinerScreen = ({ navigation }) => {
 
       {!isAnswerRevealed ? (
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, styles.revealButton]}
           onPress={handleRevealAnswer}
         >
-          <Text style={styles.actionButtonText}>उत्तर दिखाएँ</Text>
+          <Text style={styles.actionButtonText}>Reveal Answer</Text>
         </TouchableOpacity>
       ) : (
         <>
           <View style={styles.answerCard}>
-            <Text style={styles.answerLabel}>उत्तर:</Text>
+            <Text style={styles.answerLabel}>Answer:</Text>
             <Text style={styles.answerText}>{currentQuestion.answer}</Text>
           </View>
 
           {!hasSelfAssessedThisQuestion && (
             <View style={styles.selfAssessmentContainer}>
-              <Text style={styles.selfAssessmentPrompt}>क्या आपने सही उत्तर सोचा था?</Text>
+              <Text style={styles.selfAssessmentPrompt}>Did you guess the answer correctly?</Text>
               <View style={styles.assessmentButtonsRow}>
                 <TouchableOpacity
                   style={[styles.assessmentButton, styles.assessmentButtonYes]}
                   onPress={() => handleSelfAssessment(true)}
                 >
-                  <Text style={styles.assessmentButtonText}>हाँ, सही सोचा था 👍</Text>
+                  <Text style={styles.assessmentButtonText}>Yes, I did! 👍</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.assessmentButton, styles.assessmentButtonNo]}
                   onPress={() => handleSelfAssessment(false)}
                 >
-                  <Text style={styles.assessmentButtonText}>नहीं, गलत सोचा था 👎</Text>
+                  <Text style={styles.assessmentButtonText}>No, I didn't 👎</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -191,21 +209,24 @@ const OneLinerScreen = ({ navigation }) => {
         style={[styles.actionButton, styles.nextButton]}
         onPress={handleNextQuestion}
       >
-        <Text style={styles.actionButtonText}>अगला वन-लाइनर</Text>
+        <Text style={styles.actionButtonText}>Next One-Liner</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  scrollView: { // ScrollView के लिए स्टाइल
     flex: 1,
+    backgroundColor: '#f4f8fb', // थोड़ा अलग बैकग्राउंड
+  },
+  container: {
+    flexGrow: 1,
     padding: 20,
-    backgroundColor: '#f7f9fc',
   },
   loadingText: {
     fontSize: 18,
-    color: '#555',
+    color: '#4a5568', // थोड़ा गहरा ग्रे
     textAlign: 'center',
     marginTop: 50,
   },
@@ -213,82 +234,98 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    marginBottom: 15,
-    paddingVertical: 10,
+    marginBottom: 18, // थोड़ा अधिक मार्जिन
+    paddingVertical: 12, // थोड़ी अधिक पैडिंग
     paddingHorizontal:15,
-    backgroundColor: '#e9ecef',
-    borderRadius: 8,
+    backgroundColor: '#e2e8f0', // हल्का ग्रे
+    borderRadius: 10, // गोल कोने
+    elevation: 1,
   },
   statsText: {
     fontSize: 13,
-    color: '#343a40',
+    color: '#2d3748', // गहरा ग्रे-नीला
     fontWeight: '500',
-    marginRight: 10,
+    marginRight: 8, // थोड़ा कम मार्जिन
     marginBottom: 5,
   },
   questionCard: {
     backgroundColor: '#ffffff',
     paddingHorizontal: 20,
-    paddingVertical: 15, // ऊपर-नीचे थोड़ी कम पैडिंग
+    paddingVertical: 18, // थोड़ी अधिक पैडिंग
     borderRadius: 12,
-    marginBottom: 15,
-    elevation: 2,
+    marginBottom: 18,
+    elevation: 3, // थोड़ा और शैडो
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
-  questionHeader: { // प्रश्न लेबल और बुकमार्क बटन के लिए
+  questionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10, // थोड़ा अधिक मार्जिन
   },
   questionLabel: {
     fontSize: 14,
-    color: '#6c757d',
-    // marginBottom: 5, // questionHeader में चला गया
+    color: '#718096', // मध्यम ग्रे
+    fontWeight: '500',
   },
   bookmarkButton: {
-    padding: 5,
+    padding: 8, // क्लिक करने योग्य क्षेत्र बढ़ाएं
+    borderRadius: 20, // गोल बटन जैसा फील
+    // backgroundColor: '#f0f0f0', // हल्का बैकग्राउंड यदि आवश्यक हो
   },
   bookmarkIcon: {
-    fontSize: 22,
-    color: '#6c757d',
+    fontSize: 28, // आइकन का आकार बढ़ाया
+  },
+  bookmarkedActiveIcon: {
+    color: '#FFC107', // बुकमार्क होने पर पीला (या आपकी थीम का रंग)
+  },
+  bookmarkedInactiveIcon: {
+    color: '#A0AEC0', // बुकमार्क न होने पर हल्का ग्रे
   },
   questionText: {
-    fontSize: 18,
-    color: '#212529',
-    lineHeight: 26,
+    fontSize: 19, // थोड़ा बड़ा टेक्स्ट
+    color: '#1a202c', // बहुत गहरा ग्रे (लगभग काला)
+    lineHeight: 28, // बेहतर पठनीयता
     fontWeight: '500',
   },
   answerCard: {
-    backgroundColor: '#e6ffed',
-    padding: 15,
+    backgroundColor: '#E6FFFA', // हल्का टील/सियान बैकग्राउंड
+    padding: 18, // अधिक पैडिंग
     borderRadius: 12,
-    marginBottom: 15,
+    marginBottom: 18,
     borderWidth: 1,
-    borderColor: '#b8f5c9',
+    borderColor: '#B2F5EA', // हल्का बॉर्डर
+    elevation: 2,
   },
   answerLabel: {
     fontSize: 14,
-    color: '#155724',
-    marginBottom: 5,
+    color: '#2C5282', // गहरा नीला
+    marginBottom: 6, // अधिक मार्जिन
+    fontWeight: '500',
   },
   answerText: {
-    fontSize: 17,
-    color: '#0f5132',
-    lineHeight: 24,
+    fontSize: 18, // थोड़ा बड़ा उत्तर
+    color: '#285E61', // गहरा टील
+    lineHeight: 26,
     fontWeight: '500',
   },
   actionButton: {
-    backgroundColor: '#007bff',
-    paddingVertical: 12,
+    paddingVertical: 14, // थोड़ी अधिक पैडिंग
     paddingHorizontal: 20,
-    borderRadius: 8,
+    borderRadius: 10, // और गोल कोने
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12, // अधिक मार्जिन
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  revealButton: {
+    backgroundColor: '#4299E1', // नीला रंग
   },
   actionButtonText: {
     color: '#ffffff',
@@ -296,21 +333,23 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   nextButton: {
-    backgroundColor: '#28a745',
-    marginTop: 5,
+    backgroundColor: '#48BB78', // हरा रंग
+    marginTop: 8, // थोड़ा मार्जिन
   },
   selfAssessmentContainer: {
-    marginVertical: 15,
-    padding: 15,
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
+    marginVertical: 20, // अधिक मार्जिन
+    padding: 18, // अधिक पैडिंग
+    backgroundColor: '#FFFBEB', // हल्का पीला
+    borderRadius: 12,
     alignItems: 'center',
+    elevation: 2,
   },
   selfAssessmentPrompt: {
-    fontSize: 16,
-    color: '#664d03',
-    marginBottom: 12,
+    fontSize: 17, // थोड़ा बड़ा
+    color: '#975A16', // गहरा पीला/ब्राउन
+    marginBottom: 15, // अधिक मार्जिन
     fontWeight: '500',
+    textAlign: 'center',
   },
   assessmentButtonsRow: {
     flexDirection: 'row',
@@ -318,18 +357,18 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   assessmentButton: {
-    paddingVertical: 10,
+    paddingVertical: 12, // अधिक पैडिंग
     paddingHorizontal: 15,
-    borderRadius: 8,
-    flex: 0.48,
+    borderRadius: 10,
+    flex: 0.48, // थोड़ा स्पेसिंग के साथ
     alignItems: 'center',
     elevation: 1,
   },
   assessmentButtonYes: {
-    backgroundColor: '#198754',
+    backgroundColor: '#38A169', // गहरा हरा
   },
   assessmentButtonNo: {
-    backgroundColor: '#dc3545',
+    backgroundColor: '#E53E3E', // गहरा लाल
   },
   assessmentButtonText: {
     color: '#ffffff',

@@ -1,5 +1,5 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ const USER_NAME_KEY = '@UserNameKey';
 const USER_HIGH_SCORE_KEY = '@UserHighScoreKey';
 const USER_LAST_SCORE_KEY = '@UserLastScoreKey';
 const BOOKMARKED_QUESTIONS_KEY = '@BookmarkedQuestionsKey';
+const USER_SHARE_COUNT_KEY = '@UserShareCountKey'; // New key for share count
 
 const LAST_QUIZ_CORRECT_KEY = '@LastQuizCorrectKey';
 const LAST_QUIZ_WRONG_KEY = '@LastQuizWrongKey';
@@ -31,7 +32,7 @@ const LAST_QUIZ_ATTEMPTED_KEY = '@LastQuizAttemptedKey';
 
 const { width } = Dimensions.get('window');
 const cardMargin = 15;
-const cardPadding = 15;
+const baseCardPadding = 12; // Adjusted base padding for cards
 
 const numColumns = 2;
 const cardWidth = (width - cardMargin * (numColumns + 1)) / numColumns;
@@ -74,6 +75,7 @@ const HomeScreen = ({ navigation }) => {
   const [highScore, setHighScore] = useState<string | null>(null);
   const [lastScore, setLastScore] = useState<string | null>(null);
   const [bookmarkedCount, setBookmarkedCount] = useState<number>(0);
+  const [shareCount, setShareCount] = useState<number>(0); // State for share count
 
   const [lastQuizCorrect, setLastQuizCorrect] = useState<string | null>(null);
   const [lastQuizWrong, setLastQuizWrong] = useState<string | null>(null);
@@ -90,6 +92,7 @@ const HomeScreen = ({ navigation }) => {
       const storedHighScore = await AsyncStorage.getItem(USER_HIGH_SCORE_KEY);
       const storedLastScore = await AsyncStorage.getItem(USER_LAST_SCORE_KEY);
       const storedBookmarks = await AsyncStorage.getItem(BOOKMARKED_QUESTIONS_KEY);
+      const storedShareCount = await AsyncStorage.getItem(USER_SHARE_COUNT_KEY); // Load share count
       const storedLastCorrect = await AsyncStorage.getItem(LAST_QUIZ_CORRECT_KEY);
       const storedLastWrong = await AsyncStorage.getItem(LAST_QUIZ_WRONG_KEY);
       const storedLastSkipped = await AsyncStorage.getItem(LAST_QUIZ_SKIPPED_KEY);
@@ -100,6 +103,7 @@ const HomeScreen = ({ navigation }) => {
       setHighScore(storedHighScore);
       setLastScore(storedLastScore);
       setTimeDetails(getTimeBasedDetails());
+      setShareCount(storedShareCount ? parseInt(storedShareCount, 10) : 0); // Set share count
       setLastQuizCorrect(storedLastCorrect);
       setLastQuizWrong(storedLastWrong);
       setLastQuizSkipped(storedLastSkipped);
@@ -118,11 +122,11 @@ const HomeScreen = ({ navigation }) => {
       }
     } catch (e) {
       console.error("Failed to load user data.", e);
-      setUserName(null); setHighScore(null); setLastScore(null); setBookmarkedCount(0);
+      setUserName(null); setHighScore(null); setLastScore(null); setBookmarkedCount(0); setShareCount(0);
       setLastQuizCorrect(null); setLastQuizWrong(null); setLastQuizSkipped(null);
       setLastQuizTime(null); setLastQuizAttempted(null);
       if (userName === null && !isEditingName) {
-         setIsEditingName(true);
+          setIsEditingName(true);
       }
     } finally {
       setIsLoading(false);
@@ -174,29 +178,34 @@ const HomeScreen = ({ navigation }) => {
     setIsEditingName(true);
   };
 
-  // ऐप को सामान्य रूप से शेयर करने के लिए फंक्शन
+  const incrementShareCount = async () => {
+    const newShareCount = shareCount + 1;
+    await AsyncStorage.setItem(USER_SHARE_COUNT_KEY, newShareCount.toString());
+    setShareCount(newShareCount);
+  };
+
   const handleShareAppGeneral = async () => {
     try {
       const appLink = "https://play.google.com/store/apps/details?id=your.app.id"; // अपना वास्तविक ऐप लिंक डालें
-      let message = `Hey! I'm using this awesome Railway Exam Prep app. You should check it out!\n\nDownload here: ${appLink}\n\n#RailwayExamPrep #StudyApp`;
+      let message = `Hey! I'm using this awesome Railway Exam GK App. You should check it out!\n\nDownload here: ${appLink}\n\n#RailwayExamGK #StudyApp`;
       
       await Share.share({
         message: message,
-        title: "Railway Exam Prep App", 
+        title: "Railway Exam GK App", 
       });
+      incrementShareCount(); // Increment share count
     } catch (error) {
       Alert.alert("Error", "Could not share the app. Please try again.");
       console.error("Share app error:", error.message);
     }
   };
 
-  // परफॉरमेंस शेयर करने के लिए फंक्शन
   const handleSharePerformance = async () => {
     try {
       const appLink = "https://play.google.com/store/apps/details?id=your.app.id"; 
-      let shareTitle = "My Railway Exam Prep Performance! 🚂💨";
+      let shareTitle = "My Railway Exam GK App Performance! 🚂💨";
       
-      let message = `🏆 My Railway Exam Prep Journey! 🏆\n\n`;
+      let message = `🏆 My Railway Exam GK App Journey! 🏆\n\n`;
       if (userName) {
         message += `👤 Name: ${userName}\n`;
       }
@@ -218,25 +227,27 @@ const HomeScreen = ({ navigation }) => {
       
       message += `\nThink you can do better? 😉`;
       message += `\nDownload the app: ${appLink}`;
-      message += `\n\n#RailwayExamPrep #StudyChallenge #QuizStats #ExamReady`;
+      message += `\n\n#RailwayExamGK #StudyChallenge #QuizStats #ExamReady`;
 
       await Share.share({
         message: message,
         title: shareTitle,
         url: appLink 
       });
+      incrementShareCount(); // Increment share count
     } catch (error) {
       Alert.alert("Error", "Could not share performance. Please try again.");
       console.error("Share performance error:", error.message);
     }
   };
 
-  const menuItems = [
-    { id: 'quiz', title: 'क्विज़ प्रैक्टिस', color: '#5E35B1', navigateTo: 'Quiz', icon: '🎯', description: 'समयबद्ध क्विज़ के साथ अपनी तैयारी का मूल्यांकन करें।' },
-    { id: 'oneliner', title: 'वन-लाइनर रिविज़न', color: '#00897B', navigateTo: 'OneLiner', icon: '💡', description: 'महत्वपूर्ण तथ्यों और GK को तुरंत याद करें और दोहराएं।' },
-    { id: 'bookmarks', title: `बुकमार्क्स (${bookmarkedCount})`, color: '#FF8F00', navigateTo: 'BookmarkedScreen', icon: '🔖', description: 'अपने सहेजे गए प्रश्नों और नोट्स तक पहुंचें।' },
-    { id: 'shareApp', title: 'ऐप शेयर करें', color: '#D81B60', onPress: handleShareAppGeneral, icon: '📲', description: 'इस ऐप को दोस्तों के साथ साझा करें।' }, // ऐप शेयर का विकल्प वापस जोड़ा गया
-  ];
+  // Memoize menuItems to prevent re-creation on every render unless necessary dependencies change
+  const menuItems = useMemo(() => [
+    { id: 'quiz', title: 'Quiz Practice', color: '#5E35B1', navigateTo: 'Quiz', icon: '🎯', description: 'समयबद्ध क्विज़ के साथ अपनी तैयारी का मूल्यांकन करें।' },
+    { id: 'oneliner', title: 'One Liner Revision', color: '#00897B', navigateTo: 'OneLiner', icon: '💡', description: 'महत्वपूर्ण तथ्यों और GK को तुरंत याद करें और दोहराएं।' },
+    { id: 'bookmarks', title: 'Bookmarks', color: '#FF8F00', navigateTo: 'BookmarkedScreen', icon: '🔖', description: 'अपने सहेजे गए प्रश्नों और नोट्स तक पहुंचें।' }, // Title updated dynamically in map
+    { id: 'shareApp', title: 'Share App', color: '#D81B60', onPress: handleShareAppGeneral, icon: '📲', description: 'इस ऐप को दोस्तों के साथ साझा करें।' }, // Title updated dynamically in map
+  ], [handleShareAppGeneral]); // handleShareAppGeneral is stable due to useCallback if dependencies are correct
 
   if (isLoading) {
     return (
@@ -258,7 +269,7 @@ const HomeScreen = ({ navigation }) => {
             <View style={styles.headerDecoration}></View>
             <View style={styles.headerDecoration2}></View>
             <View style={styles.headerContent}>
-              <Text style={styles.headerAppTitle}>Railway Exam Prep</Text>
+              <Text style={styles.headerAppTitle}>Railway Exam GK App</Text> {/* App Name Updated */}
               <View style={styles.headerLine}></View>
               <Text style={styles.headerSubtitle}>Your Path to Success</Text>
             </View>
@@ -307,30 +318,38 @@ const HomeScreen = ({ navigation }) => {
         )}
 
         <View style={styles.menuGrid}>
-          {menuItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.card, { width: cardWidth }]}
-              onPress={() => {
-                if (item.navigateTo) {
-                  navigation.navigate(item.navigateTo as keyof RootStackParamList);
-                } else if (item.onPress) {
-                  item.onPress();
-                }
-              }}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.cardBorderTop, { backgroundColor: item.color }]} />
-              <View style={[styles.iconWrapper, { backgroundColor: item.color + '1A' }]}>
-                <Text style={[styles.iconText, { color: item.color }]}>{item.icon}</Text>
-              </View>
-              <Text style={styles.cardTitle} numberOfLines={1} ellipsizeMode="tail">{item.title}</Text>
-              <Text style={styles.cardDescription} numberOfLines={2} ellipsizeMode="tail">{item.description}</Text>
-              <View style={styles.goArrowContainer}>
-                 <Text style={[styles.goArrow, { color: item.color }]}>❯</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+          {menuItems.map((item) => {
+            let displayTitle = item.title;
+            if (item.id === 'bookmarks') {
+              displayTitle = `Bookmarks (${bookmarkedCount})`;
+            } else if (item.id === 'shareApp') {
+              displayTitle = `Share App (${shareCount} ${shareCount === 1 ? 'time' : 'times'})`;
+            }
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.card, { width: cardWidth }]}
+                onPress={() => {
+                  if (item.navigateTo) {
+                    navigation.navigate(item.navigateTo as keyof RootStackParamList);
+                  } else if (item.onPress) {
+                    item.onPress();
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.cardBorderTop, { backgroundColor: item.color }]} />
+                <View style={[styles.iconWrapper, { backgroundColor: item.color + '1A' }]}>
+                  <Text style={[styles.iconText, { color: item.color }]}>{item.icon}</Text>
+                </View>
+                <Text style={styles.cardTitle} numberOfLines={2} ellipsizeMode="tail">{displayTitle}</Text> 
+                <Text style={styles.cardDescription} numberOfLines={3} ellipsizeMode="tail">{item.description}</Text>
+                <View style={styles.goArrowContainer}>
+                    <Text style={[styles.goArrow, { color: item.color }]}>❯</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {(!isEditingName && (highScore || lastScore || lastQuizCorrect)) && (
@@ -390,6 +409,15 @@ const HomeScreen = ({ navigation }) => {
                 <Text style={styles.sharePerformanceButtonText}>Share Performance 📤</Text>
               </TouchableOpacity>
             }
+             {/* Play Again Button */}
+            {lastScore && (
+                <TouchableOpacity 
+                    style={styles.playAgainButton} 
+                    onPress={() => navigation.navigate('Quiz')}
+                >
+                    <Text style={styles.playAgainButtonText}>Play Quiz Again 🚀</Text>
+                </TouchableOpacity>
+            )}
           </View>
         )}
       </ScrollView>
@@ -593,21 +621,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    paddingHorizontal: cardMargin - (cardMargin / numColumns / 2),
+    paddingHorizontal: cardMargin - (cardMargin / numColumns / 2), // Adjust for even spacing
     marginTop: 15, 
   },
-  card: {
+  card: { // Card padding and spacing adjusted
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    paddingTop: cardPadding + 8,
-    paddingBottom: cardPadding + 5,
-    paddingHorizontal: cardPadding + 2,
-    marginBottom: cardMargin + 8,
-    elevation: 8,
+    borderRadius: 20, // Slightly reduced border radius
+    paddingTop: baseCardPadding + 3, // e.g., 12 + 3 = 15
+    paddingBottom: baseCardPadding,    // e.g., 12
+    paddingHorizontal: baseCardPadding, // e.g., 12
+    marginBottom: cardMargin + 5, // Slightly reduced bottom margin
+    elevation: 7, // Slightly adjusted elevation
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
     alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
@@ -617,46 +645,47 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 7,
+    height: 6, // Slightly reduced border height
   },
-  iconWrapper: {
-    width: 75,
-    height: 75,
-    borderRadius: 38,
+  iconWrapper: { // Icon wrapper margins adjusted
+    width: 70, // Slightly smaller icon wrapper
+    height: 70,
+    borderRadius: 35,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 18,
-    marginTop: 12,
+    marginBottom: 10, // Reduced margin
+    marginTop: 8,    // Reduced margin
     elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
   },
   iconText: {
-    fontSize: 34,
+    fontSize: 32, // Slightly smaller icon
   },
-  cardTitle: {
-    fontSize: 18,
+  cardTitle: { // Card title margin and text properties adjusted
+    fontSize: 17, // Slightly adjusted font size
     fontWeight: 'bold',
-    color: '#212121',
-    marginBottom: 10,
+    color: '#263238', // Darker color for title
+    marginBottom: 6, // Reduced margin
     textAlign: 'center',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
-  cardDescription: {
-    fontSize: 13,
-    color: '#616161',
-    lineHeight: 20,
+  cardDescription: { // Card description properties adjusted
+    fontSize: 12.5, // Slightly smaller font size for description
+    color: '#546E7A', // Slightly lighter color
+    lineHeight: 18, // Adjusted line height
     textAlign: 'center',
-    minHeight: 40,
-    marginBottom: 15,
+    minHeight: 54, // Approx 3 lines (18 * 3)
+    marginBottom: 10, // Reduced margin
+    paddingHorizontal: 5, // Add some horizontal padding if text is long
   },
   goArrowContainer: {
-    padding: 5,
+    padding: 4, // Reduced padding
   },
   goArrow: {
-    fontSize: 24,
+    fontSize: 22, // Slightly smaller arrow
     fontWeight: 'bold',
   },
   performanceSection: {
@@ -665,7 +694,7 @@ const styles = StyleSheet.create({
     marginTop: 25,
     marginBottom: 15,
     borderRadius: 18,
-    padding: 20,
+    padding: 18, // Slightly reduced padding
     elevation: 6,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 3 },
@@ -692,7 +721,7 @@ const styles = StyleSheet.create({
   performanceStatRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 7, // Adjusted padding
   },
   performanceStatLabel: {
     fontSize: 15,
@@ -719,6 +748,24 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   sharePerformanceButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  playAgainButton: { // Styles for the new Play Again button
+    backgroundColor: '#5E35B1', // Theme color
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 15, // Spacing from share button or last stat
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  playAgainButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',

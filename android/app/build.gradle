@@ -1,5 +1,5 @@
 apply plugin: "com.android.application"
-apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "org.jetbrains.kotlin.android" // Agar Kotlin istemal kar rahe hain toh rakhein
 apply plugin: "com.facebook.react"
 
 /**
@@ -57,7 +57,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = false // Aap ise 'true' kar sakte hain production build ke liye (optional)
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -70,7 +70,7 @@ def enableProguardInReleaseBuilds = false
  * give correct results when using with locales other than en-US. Note that
  * this variant is about 6MiB larger per architecture than default.
  */
-def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+' // Ya 'io.github.react-native:jsc-android:+' agar naya version hai
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -85,6 +85,8 @@ android {
         versionCode 1
         versionName "1.0"
     }
+
+    // YAHAN BADLAV KIYA GAYA HAI - signingConfigs block
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -92,7 +94,16 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release { // YEH NAYA BLOCK ADD KIYA GAYA HAI
+            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+                storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                storePassword MYAPP_UPLOAD_STORE_PASSWORD
+                keyAlias MYAPP_UPLOAD_KEY_ALIAS
+                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            }
+        }
     }
+
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
@@ -100,7 +111,10 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+
+            // YAHAN BADLAV KIYA GAYA HAI - ab yeh release signing config use karega
+            signingConfig signingConfigs.release
+
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -111,9 +125,14 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    if (hermesEnabled.toBoolean()) {
+    // Hermes engine (agar enabled hai toh)
+    // `hermesEnabled` variable aapke project ke `android/gradle.properties` file mein define hota hai
+    def hermesEnabled = project.hasProperty('hermesEnabled') ? project.hermesEnabled : false
+    if (hermesEnabled) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
     }
+
+    // Baaki dependencies agar hain toh...
 }
